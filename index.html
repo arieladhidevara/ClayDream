@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ClayDream Captures</title>
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    html, body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #000;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    #gallery {
+      width: 100vw;
+      height: 100vh;
+      display: grid;
+      grid-template-rows: repeat(5, 1fr);
+      gap: 12px;
+      padding: 12px;
+      background: #000;
+    }
+
+    #logo {
+      position: fixed;
+      top: 0px;
+      left: 50%;
+      transform: translateX(-50%);
+      height: 200px;
+      width: auto;
+      z-index: 10;
+      pointer-events: none;
+    }
+
+    .row {
+      position: relative;
+      overflow: hidden;
+      width: 100%;
+      height: 100%;
+    }
+
+    .track {
+      height: 100%;
+      display: flex;
+      gap: 12px;
+      will-change: transform;
+    }
+
+    .row.animate.left .track {
+      animation: scroll-left var(--speed, 45s) linear infinite;
+    }
+
+    .row.animate.right .track {
+      animation: scroll-right var(--speed, 45s) linear infinite;
+    }
+
+    .item {
+      flex: 0 0 calc((100vw - 48px) / 3);
+      height: 100%;
+      background: #050505;
+      border-radius: 18px;
+      overflow: hidden;
+    }
+
+    .item img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      display: block;
+      background: #000;
+    }
+
+    @keyframes scroll-left {
+      from { transform: translateX(0); }
+      to   { transform: translateX(calc(-50% - 6px)); }
+    }
+
+    @keyframes scroll-right {
+      from { transform: translateX(calc(-50% - 6px)); }
+      to   { transform: translateX(0); }
+    }
+
+    .empty {
+      height: 100vh;
+      display: grid;
+      place-items: center;
+      color: #333;
+      background: #000;
+      font-size: 18px;
+      letter-spacing: 0.04em;
+    }
+  </style>
+</head>
+
+<body>
+  <img id="logo" src="/logo.png" alt="logo" />
+  <main id="gallery"></main>
+
+  <script>
+    const gallery = document.getElementById("gallery");
+    let lastImageKey = "";
+
+    async function fetchImages() {
+      const response = await fetch("/api/images?cacheBust=" + Date.now());
+      if (!response.ok) throw new Error("Could not load images");
+      return await response.json();
+    }
+
+    function chunkIntoRows(images) {
+      const rows = [[], [], [], [], []];
+
+      images.forEach((image, index) => {
+        rows[index % 5].push(image);
+      });
+
+      return rows;
+    }
+
+    function createItem(src) {
+      const item = document.createElement("div");
+      item.className = "item";
+
+      const img = document.createElement("img");
+      img.src = src;
+      img.loading = "lazy";
+
+      item.appendChild(img);
+      return item;
+    }
+
+    function render(images) {
+      gallery.innerHTML = "";
+
+      if (!images.length) {
+        gallery.className = "empty";
+        gallery.textContent = "No captures yet";
+        return;
+      }
+
+      gallery.className = "";
+
+      const rows = chunkIntoRows(images);
+      const shouldAnimate = images.length > 15;
+
+      rows.forEach((rowImages, rowIndex) => {
+        const row = document.createElement("section");
+        const direction = rowIndex % 2 === 0 ? "left" : "right";
+        row.className = `row ${shouldAnimate ? "animate" : ""} ${direction}`;
+        row.style.setProperty("--speed", `${Math.max(28, rowImages.length * 7)}s`);
+
+        const track = document.createElement("div");
+        track.className = "track";
+
+        // Duplicate row images so the carousel can loop smoothly.
+        const loopImages = shouldAnimate ? [...rowImages, ...rowImages] : rowImages;
+
+        loopImages.forEach((image) => {
+          track.appendChild(createItem("/captures/" + encodeURIComponent(image)));
+        });
+
+        row.appendChild(track);
+        gallery.appendChild(row);
+      });
+    }
+
+    async function updateGallery() {
+      try {
+        const images = await fetchImages();
+        const imageKey = images.join("|");
+
+        if (imageKey !== lastImageKey) {
+          lastImageKey = imageKey;
+          render(images);
+        }
+      } catch (error) {
+        console.error(error);
+      }
+    }
+
+    updateGallery();
+    setInterval(updateGallery, 2000);
+  </script>
+</body>
+</html>
