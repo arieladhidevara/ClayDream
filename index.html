@@ -5,6 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>ClayDream Captures</title>
 
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Pacifico&display=swap" rel="stylesheet">
+
   <style>
     * {
       box-sizing: border-box;
@@ -23,21 +27,44 @@
       width: 100vw;
       height: 100vh;
       display: grid;
-      grid-template-rows: repeat(5, 1fr);
+      grid-template-rows: repeat(3, 1fr);
       gap: 12px;
-      padding: 12px;
+      padding: 140px 12px 12px;
       background: #000;
     }
 
     #logo {
       position: fixed;
-      top: 0px;
+      top: 24px;
       left: 50%;
       transform: translateX(-50%);
-      height: 200px;
-      width: auto;
       z-index: 10;
       pointer-events: none;
+      color: #fff;
+      font-size: 30px;
+      line-height: 1;
+      white-space: nowrap;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    #logo .logo-img {
+      height: 48px;
+      width: auto;
+      display: block;
+    }
+
+    #logo .clay {
+      font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+
+    #logo .dream {
+      font-family: "Pacifico", cursive;
+      font-weight: 400;
+      margin-left: 0.08em;
     }
 
     .row {
@@ -63,7 +90,7 @@
     }
 
     .item {
-      flex: 0 0 calc((100vw - 48px) / 3);
+      flex: 0 0 calc((100vw - 60px) / 4);
       height: 100%;
       background: #050505;
       border-radius: 18px;
@@ -101,7 +128,10 @@
 </head>
 
 <body>
-  <img id="logo" src="/logo.png" alt="logo" />
+  <div id="logo">
+    <img class="logo-img" src="/logo.png" alt="logo" />
+    <span class="text"><span class="clay">Clay</span><span class="dream">Dream</span></span>
+  </div>
   <main id="gallery"></main>
 
   <script>
@@ -115,10 +145,10 @@
     }
 
     function chunkIntoRows(images) {
-      const rows = [[], [], [], [], []];
+      const rows = [[], [], []];
 
       images.forEach((image, index) => {
-        rows[index % 5].push(image);
+        rows[index % 3].push(image);
       });
 
       return rows;
@@ -148,7 +178,7 @@
       gallery.className = "";
 
       const rows = chunkIntoRows(images);
-      const shouldAnimate = images.length > 15;
+      const shouldAnimate = images.length > 12;
 
       rows.forEach((rowImages, rowIndex) => {
         const row = document.createElement("section");
