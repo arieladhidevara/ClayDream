@@ -29,7 +29,7 @@
       display: grid;
       grid-template-rows: repeat(3, 1fr);
       gap: 12px;
-      padding: 140px 12px 12px;
+      padding: 90px 12px 12px;
       background: #000;
     }
 
@@ -77,7 +77,7 @@
     .track {
       height: 100%;
       display: flex;
-      gap: 12px;
+      gap: 80px;
       will-change: transform;
     }
 
@@ -90,9 +90,11 @@
     }
 
     .item {
-      flex: 0 0 calc((100vw - 60px) / 4);
+      flex: 0 0 auto;
       height: 100%;
+      aspect-ratio: 9 / 16;
       background: #050505;
+      border: 2px solid #fff;
       border-radius: 18px;
       overflow: hidden;
     }
@@ -100,18 +102,18 @@
     .item img {
       width: 100%;
       height: 100%;
-      object-fit: contain;
+      object-fit: cover;
       display: block;
       background: #000;
     }
 
     @keyframes scroll-left {
       from { transform: translateX(0); }
-      to   { transform: translateX(calc(-50% - 6px)); }
+      to   { transform: translateX(calc(-50% - 40px)); }
     }
 
     @keyframes scroll-right {
-      from { transform: translateX(calc(-50% - 6px)); }
+      from { transform: translateX(calc(-50% - 40px)); }
       to   { transform: translateX(0); }
     }
 
@@ -124,6 +126,68 @@
       font-size: 18px;
       letter-spacing: 0.04em;
     }
+
+    #popup-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 50;
+      background: rgba(0, 0, 0, 0);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
+      transition: background 0.25s ease;
+    }
+
+    #popup-overlay.show {
+      background: rgba(0, 0, 0, 0.75);
+    }
+
+    #popup-overlay img {
+      max-width: 60vw;
+      max-height: 75vh;
+      border: 4px solid #fff;
+      border-radius: 28px;
+      box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6);
+      transform: scale(0);
+      opacity: 0;
+    }
+
+    #popup-overlay.show img {
+      animation: popup-bounce 0.9s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+    }
+
+    #popup-overlay.hide img {
+      animation: popup-out 0.3s ease forwards;
+    }
+
+    @keyframes popup-bounce {
+      0%   { transform: scale(0);    opacity: 0; }
+      55%  { transform: scale(1.18); opacity: 1; }
+      72%  { transform: scale(0.92); }
+      85%  { transform: scale(1.05); }
+      100% { transform: scale(1);    opacity: 1; }
+    }
+
+    @keyframes popup-out {
+      from { transform: scale(1);   opacity: 1; }
+      to   { transform: scale(0.6); opacity: 0; }
+    }
+
+    #enable-sound {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      z-index: 100;
+      padding: 12px 18px;
+      border: 2px solid #fff;
+      border-radius: 999px;
+      background: rgba(0, 0, 0, 0.7);
+      color: #fff;
+      font: 600 14px/1 system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      letter-spacing: 0.04em;
+      cursor: pointer;
+    }
   </style>
 </head>
 
@@ -133,15 +197,156 @@
     <span class="text"><span class="clay">Clay</span><span class="dream">Dream</span></span>
   </div>
   <main id="gallery"></main>
+  <div id="popup-overlay"><img alt="" /></div>
+  <audio id="bounce-fallback" src="/bounce.mp3" preload="auto"></audio>
+  <button id="enable-sound" hidden>Click to enable sound</button>
 
   <script>
     const gallery = document.getElementById("gallery");
+    const popupOverlay = document.getElementById("popup-overlay");
+    const popupImage = popupOverlay.querySelector("img");
     let lastImageKey = "";
+    let knownImages = new Set();
+    let popupQueue = [];
+    let popupRunning = false;
+
+    // Decode the bounce sound up-front so playback is sample-accurate when
+    // the popup animation kicks off. Fall back to a plain <audio> element if
+    // the AudioContext can't be used (e.g. blocked by autoplay policy).
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    const audioContext = AudioCtx ? new AudioCtx() : null;
+    const bounceFallback = document.getElementById("bounce-fallback");
+    const enableSoundButton = document.getElementById("enable-sound");
+    let bounceBuffer = null;
+
+    if (audioContext) {
+      fetch("/bounce.mp3")
+        .then((response) => response.arrayBuffer())
+        .then((buffer) => audioContext.decodeAudioData(buffer))
+        .then((decoded) => { bounceBuffer = decoded; })
+        .catch((error) => console.warn("Could not decode bounce sound", error));
+    }
+
+    function audioLocked() {
+      if (audioContext && audioContext.state !== "suspended") return false;
+      // Even without Web Audio we can still try the <audio> fallback.
+      return audioContext ? audioContext.state === "suspended" : false;
+    }
+
+    function unlockAudio() {
+      const promises = [];
+      if (audioContext && audioContext.state === "suspended") {
+        promises.push(audioContext.resume());
+      }
+      // Priming the fallback element with a muted play+pause grants it the
+      // browser's "user-activated" flag so subsequent .play() calls succeed.
+      if (bounceFallback) {
+        bounceFallback.muted = true;
+        const primed = bounceFallback.play();
+        if (primed && primed.then) {
+          promises.push(
+            primed.then(() => {
+              bounceFallback.pause();
+              bounceFallback.currentTime = 0;
+              bounceFallback.muted = false;
+            }).catch(() => {})
+          );
+        } else {
+          bounceFallback.pause();
+          bounceFallback.muted = false;
+        }
+      }
+      Promise.all(promises).finally(() => {
+        if (!audioLocked()) enableSoundButton.hidden = true;
+      });
+    }
+
+    document.addEventListener("click", unlockAudio);
+    document.addEventListener("keydown", unlockAudio);
+    document.addEventListener("touchstart", unlockAudio);
+    enableSoundButton.addEventListener("click", unlockAudio);
+
+    function playBounce() {
+      if (audioContext && audioContext.state === "suspended") {
+        audioContext.resume();
+      }
+
+      // Preferred path: zero-latency Web Audio buffer source.
+      if (audioContext && audioContext.state === "running" && bounceBuffer) {
+        const source = audioContext.createBufferSource();
+        source.buffer = bounceBuffer;
+        source.connect(audioContext.destination);
+        source.start(0);
+        return;
+      }
+
+      // Fallback: HTMLAudioElement. Clone so rapid replays don't fight over
+      // the same playhead.
+      if (bounceFallback) {
+        const clone = bounceFallback.cloneNode();
+        const result = clone.play();
+        if (result && result.catch) {
+          result.catch(() => {
+            enableSoundButton.hidden = false;
+          });
+        }
+      }
+    }
+
+    // If audio is still locked after a moment, surface the unlock button so
+    // the user can grant permission with a single click.
+    setTimeout(() => {
+      if (audioLocked()) enableSoundButton.hidden = false;
+    }, 1500);
 
     async function fetchImages() {
       const response = await fetch("/api/images?cacheBust=" + Date.now());
       if (!response.ok) throw new Error("Could not load images");
       return await response.json();
+    }
+
+    function preloadImage(src) {
+      return new Promise((resolve) => {
+        const img = new Image();
+        img.onload = img.onerror = () => resolve();
+        img.src = src;
+      });
+    }
+
+    function wait(ms) {
+      return new Promise((resolve) => setTimeout(resolve, ms));
+    }
+
+    async function showPopup(imageName) {
+      const src = "/captures/" + encodeURIComponent(imageName);
+      await preloadImage(src);
+
+      popupImage.src = src;
+      popupOverlay.classList.remove("hide");
+      // Force reflow so the bounce animation restarts on repeated popups.
+      void popupOverlay.offsetWidth;
+      popupOverlay.classList.add("show");
+      playBounce();
+
+      await wait(2000);
+
+      popupOverlay.classList.add("hide");
+      popupOverlay.classList.remove("show");
+      await wait(300);
+      popupOverlay.classList.remove("hide");
+      popupImage.removeAttribute("src");
+    }
+
+    async function processPopupQueue() {
+      if (popupRunning) return;
+      popupRunning = true;
+      while (popupQueue.length) {
+        const next = popupQueue.shift();
+        await showPopup(next.image);
+        lastImageKey = next.imageKey;
+        render(next.images);
+      }
+      popupRunning = false;
     }
 
     function chunkIntoRows(images) {
@@ -178,19 +383,43 @@
       gallery.className = "";
 
       const rows = chunkIntoRows(images);
-      const shouldAnimate = images.length > 12;
+
+      // Figure out how many items fit across the viewport, so each "half" of
+      // the duplicated track equals roughly one screen width. That way an image
+      // that exits one side reappears on the opposite side immediately.
+      const NUM_ROWS = 3;
+      const GALLERY_TOP_PAD = 90;
+      const GALLERY_BOTTOM_PAD = 12;
+      const ROW_GAP = 12;
+      const TRACK_GAP = 80;
+      const ASPECT_W_OVER_H = 9 / 16;
+
+      const totalRowsHeight =
+        window.innerHeight - GALLERY_TOP_PAD - GALLERY_BOTTOM_PAD - ROW_GAP * (NUM_ROWS - 1);
+      const rowHeight = totalRowsHeight / NUM_ROWS;
+      const itemWidth = rowHeight * ASPECT_W_OVER_H;
+      const slotWidth = itemWidth + TRACK_GAP;
+      const itemsPerScreen = Math.max(2, Math.ceil(window.innerWidth / slotWidth));
 
       rows.forEach((rowImages, rowIndex) => {
+        if (!rowImages.length) return;
+
         const row = document.createElement("section");
         const direction = rowIndex % 2 === 0 ? "left" : "right";
-        row.className = `row ${shouldAnimate ? "animate" : ""} ${direction}`;
-        row.style.setProperty("--speed", `${Math.max(28, rowImages.length * 7)}s`);
+        row.className = `row animate ${direction}`;
+
+        // Repeat the row's images until one half of the track ≈ one screen
+        // width, then duplicate so the -50% loop is seamless.
+        const halfRepeats = Math.max(1, Math.ceil(itemsPerScreen / rowImages.length));
+        const totalRepeats = halfRepeats * 2;
+        const loopImages = [];
+        for (let i = 0; i < totalRepeats; i++) loopImages.push(...rowImages);
+
+        const halfCount = rowImages.length * halfRepeats;
+        row.style.setProperty("--speed", `${Math.max(30, halfCount * 5)}s`);
 
         const track = document.createElement("div");
         track.className = "track";
-
-        // Duplicate row images so the carousel can loop smoothly.
-        const loopImages = shouldAnimate ? [...rowImages, ...rowImages] : rowImages;
 
         loopImages.forEach((image) => {
           track.appendChild(createItem("/captures/" + encodeURIComponent(image)));
@@ -205,11 +434,26 @@
       try {
         const images = await fetchImages();
         const imageKey = images.join("|");
+        if (imageKey === lastImageKey) return;
 
-        if (imageKey !== lastImageKey) {
+        const isFirstLoad = lastImageKey === "" && knownImages.size === 0;
+        const newImages = images.filter((image) => !knownImages.has(image));
+        knownImages = new Set(images);
+
+        if (isFirstLoad || newImages.length === 0) {
           lastImageKey = imageKey;
           render(images);
+          return;
         }
+
+        // Show a popup for the most recently added image, then update the
+        // carousel so the new image lands in its row.
+        popupQueue.push({
+          image: newImages[newImages.length - 1],
+          images,
+          imageKey,
+        });
+        processPopupQueue();
       } catch (error) {
         console.error(error);
       }
